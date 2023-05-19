@@ -1,5 +1,5 @@
 import time
-from .etl import etl_task
+from etl2 import etl_task
 from schedule import run_pending
 
 # Run the task indefinitely

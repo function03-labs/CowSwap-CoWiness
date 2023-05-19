@@ -1,14 +1,12 @@
-from .web3 import get_receipt_from_txhash
+from .web3 import get_receipt_from_txhash, create_contract
 import web3.exceptions
 from utils.instance_collect import fetch_order
-from utils.create_contracts import (
-    settlement,
-    erc20,
-)
+from utils.create_contracts import settlement, erc20
 from utils.helpers import *
 import networkx as nx
-
 # Create settlement and erc20 contracts
+import matplotlib.pyplot as plt
+from io import BytesIO
 
 
 def process_log(log):
@@ -135,7 +133,6 @@ def get_swaps(tx_hash):
             processed_logs.append({"address": address, **processed_log})
     # print("processed logs are:", processed_logs)
     swaps = []
-    # accumulator = {}
     expected_transfers = set()
     G = nx.DiGraph()
     G.add_node(settlement.address)
@@ -146,7 +143,8 @@ def get_swaps(tx_hash):
         # print("Log detected: ", log["event"], "\n log index is: ", index)
         if log["event"] == "Trade":
             oid = "0x" + str(
-                hex(int.from_bytes(args["orderUid"], byteorder="big", signed=False))
+                hex(int.from_bytes(args["orderUid"],
+                    byteorder="big", signed=False))
             )[2:].zfill(112)
             order = fetch_order(oid)
             swaps.append(
@@ -179,6 +177,7 @@ def get_swaps(tx_hash):
                         args["buyAmount"],
                     )
                 )
+                
 
         if log["event"] == "Transfer":
             t = transferUid(address, args["from"], args["to"], args["value"])
@@ -190,52 +189,73 @@ def get_swaps(tx_hash):
                 token_address = log["address"]
                 value = log["args"]["value"]
 
-                G.add_edge(from_address, to_address, value=value, token=token_address)
-    cycles = []
-    cycles = nx.simple_cycles(G)
-    # print("cycles\n", cycles)
-    for cycle in cycles:
-        # print(cycle, " cycle was")
-        if settlement.address in cycle and len(cycle) > 1:
-            # cycle.append(settlement.address)
-            swap = {
-                "sell_token": None,
-                "sell_amount": 0,
-                "buy_token": None,
-                "buy_amount": 0,
-            }
-            # get position of settlement address in cycle
-            i = cycle.index(settlement.address)
+                G.add_edge(from_address, to_address, value=value,
+                           token=token_address)
+            cycles = []
 
-            # get first address after settlement and address before
-            # settlement
-            address_to = cycle[(cycle.index(settlement.address) + 1) % len(cycle)]
-            address_from = cycle[(cycle.index(settlement.address) - 1) % len(cycle)]
-            # print(
-            #     "both addresses to and from", address_to, address_from, "cycle", cycle
-            # )
-            # get token and value of edge between settlement and address_to
-            token_to = G.edges[settlement.address, address_to]["token"]
-            value_to = G.edges[settlement.address, address_to]["value"]
-            # get token and value of edge between address_from and settlement
-            token_from = G.edges[address_from, settlement.address]["token"]
-            value_from = G.edges[address_from, settlement.address]["value"]
+            plt.switch_backend('Agg')
+            nx.draw(G, with_labels=True)
+            plt.savefig("filename.png")
 
-            swap["sell_token"] = token_to
-            swap["sell_amount"] = value_to
-            swap["buy_token"] = token_from
-            swap["buy_amount"] = value_from
-            swaps.append(
-                {
-                    "kind": "interaction",
-                    # "target": args["target"],
-                    **swap,
-                }
-            )
-    if len(logs) > 30:
-        print("logs are:", logs)
-        print("processed logs are:", processed_logs)
-        print("swaps are:", swaps)
-        print("cycles are:", cycles)
-        raise RuntimeError("too many logs for this transaction")
+            cycles = nx.simple_cycles(G)
+
+            for cycle in cycles:
+                print(cycle, " cycle was")
+                if settlement.address in cycle and len(cycle) > 1:
+                    # cycle.append(settlement.address)
+                    swap = {"sell_token": None, "sell_amount": 0,
+                            "buy_token": None, "buy_amount": 0}
+                    # get position of settlement address in cycle
+                    i = cycle.index(settlement.address)
+
+                    # get first address after settlement and address before
+                    # settlement
+                    address_to = cycle[(cycle.index(
+                        settlement.address) + 1) % len(cycle)]
+                    address_from = cycle[(cycle.index(
+                    #     settlement.address) - 1) % len(cycle)]
+                    # print(
+                    #     "both addresses to and from",
+                    #     address_to,
+                    #     address_from,
+                    #     "cycle",
+                    #     cycle
+
+                    # )
+                    # get token and value of edge between settlement and address_to
+                    token_to = G.edges[settlement.address, address_to]["token"]
+                    value_to = G.edges[settlement.address, address_to]["value"]
+                    # get token and value of edge between address_from and settlement
+                    token_from = G.edges[address_from,
+                                         settlement.address]["token"]
+                    value_from = G.edges[address_from,
+                                         settlement.address]["value"]
+
+                    swap["sell_token"] = token_to
+                    swap["sell_amount"] = value_to
+                    swap["buy_token"] = token_from
+                    swap["buy_amount"] = value_from
+                    swaps.append({
+                        "kind": "interaction",
+                        # "target": args["target"],
+                        **swap
+                    })
+
+                    # remove cycle from graph except settlement
+
+                    # rearrange cycle list to start from settlement address at index i
+                    cycle = cycle[i:] + cycle[:i]
+                    # print("rearranged cycle is", cycle)
+                    # remove all edges in cycle except settlement
+                    for i in range(len(cycle)-1):
+                        from_address = cycle[i]
+                        to_address = cycle[i+1]
+                        G.remove_edge(from_address, to_address)
+                    # remove all nodes in cycle except settlement
+                    for node in cycle:
+                        if node != settlement.address:
+                            G.remove_node(node)
+                    # print("updated graph is", G.edges, " nodes: \n", G.nodes)
+
+
     return swaps, blockNumber

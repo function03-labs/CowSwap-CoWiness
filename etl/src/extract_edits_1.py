@@ -233,9 +233,9 @@ def get_swaps(tx_hash):
                 }
             )
     if len(logs) > 30:
-        print("logs are:", logs)
-        print("processed logs are:", processed_logs)
-        print("swaps are:", swaps)
-        print("cycles are:", cycles)
+        # print("logs are:", logs)
+        # print("processed logs are:", processed_logs)
+        # print("swaps are:", swaps)
+        # print("cycles are:", cycles)
         raise RuntimeError("too many logs for this transaction")
     return swaps, blockNumber

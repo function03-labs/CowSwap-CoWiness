@@ -6,7 +6,6 @@ from utils.create_contracts import (
     erc20,
 )
 from utils.helpers import *
-import networkx as nx
 
 # Create settlement and erc20 contracts
 
@@ -126,19 +125,17 @@ def get_swaps(tx_hash):
     blockNumber = receipt["blockNumber"]
 
     logs = receipt["logs"]
-    # print("logs found are:", logs)
+    # print("logs found are:", len(logs))
     processed_logs = []
     for log in logs:
         address = log["address"]
         processed_log = process_log(log)
         if processed_log is not None:
             processed_logs.append({"address": address, **processed_log})
-    # print("processed logs are:", processed_logs)
+
     swaps = []
-    # accumulator = {}
+    accumulator = {}
     expected_transfers = set()
-    G = nx.DiGraph()
-    G.add_node(settlement.address)
 
     for index, log in enumerate(processed_logs):
         args = log["args"]
@@ -180,62 +177,33 @@ def get_swaps(tx_hash):
                     )
                 )
 
-        if log["event"] == "Transfer":
+        elif log["event"] == "Transfer":
             t = transferUid(address, args["from"], args["to"], args["value"])
             if t in expected_transfers:
                 expected_transfers.remove(t)
             else:
-                from_address = log["args"]["from"]
-                to_address = log["args"]["to"]
-                token_address = log["address"]
-                value = log["args"]["value"]
+                counterpart = (
+                    args["to"] if args["to"] != settlement.address else args["from"]
+                )
+                if counterpart not in accumulator:
+                    accumulator[counterpart] = {"ins": [], "outs": []}
 
-                G.add_edge(from_address, to_address, value=value, token=token_address)
-    cycles = []
-    cycles = nx.simple_cycles(G)
-    # print("cycles\n", cycles)
-    for cycle in cycles:
-        # print(cycle, " cycle was")
-        if settlement.address in cycle and len(cycle) > 1:
-            # cycle.append(settlement.address)
-            swap = {
-                "sell_token": None,
-                "sell_amount": 0,
-                "buy_token": None,
-                "buy_amount": 0,
-            }
-            # get position of settlement address in cycle
-            i = cycle.index(settlement.address)
+                if args["to"] == settlement.address:
+                    accumulator[counterpart]["ins"].append(
+                        {"token": address, "amount": args["value"]}
+                    )
+                if args["from"] == settlement.address:
+                    accumulator[counterpart]["outs"].append(
+                        {"token": address, "amount": args["value"]}
+                    )
 
-            # get first address after settlement and address before
-            # settlement
-            address_to = cycle[(cycle.index(settlement.address) + 1) % len(cycle)]
-            address_from = cycle[(cycle.index(settlement.address) - 1) % len(cycle)]
-            # print(
-            #     "both addresses to and from", address_to, address_from, "cycle", cycle
-            # )
-            # get token and value of edge between settlement and address_to
-            token_to = G.edges[settlement.address, address_to]["token"]
-            value_to = G.edges[settlement.address, address_to]["value"]
-            # get token and value of edge between address_from and settlement
-            token_from = G.edges[address_from, settlement.address]["token"]
-            value_from = G.edges[address_from, settlement.address]["value"]
+        elif log["event"] == "Interaction":
+            for counterpart, acc in accumulator.items():
+                # print(accumulator, "acc")
+                if len(acc["ins"]) >= 1 and len(acc["outs"]) >= 1:
+                    swaps += collapse_interaction_transfers(
+                        acc, args["target"], args["value"], args["selector"]
+                    )
+                    accumulator[counterpart] = {"ins": [], "outs": []}
 
-            swap["sell_token"] = token_to
-            swap["sell_amount"] = value_to
-            swap["buy_token"] = token_from
-            swap["buy_amount"] = value_from
-            swaps.append(
-                {
-                    "kind": "interaction",
-                    # "target": args["target"],
-                    **swap,
-                }
-            )
-    if len(logs) > 30:
-        print("logs are:", logs)
-        print("processed logs are:", processed_logs)
-        print("swaps are:", swaps)
-        print("cycles are:", cycles)
-        raise RuntimeError("too many logs for this transaction")
     return swaps, blockNumber

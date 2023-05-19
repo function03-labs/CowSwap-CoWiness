@@ -82,11 +82,13 @@ Create a `.env` file and add the following environment variables:
 MONGODB_URI=<your_mongodb_uri>
 MONGODB_DB_NAME=<your_mongodb_database_name>
 MONGODB_COLLECTION_NAME=<your_mongodb_collection_name>
+START_TIMESTAMP=UNIX_TIMESTAMP
 
 #Required to run the API
 SUBGRAPH_ENDPOINT=<your_subgraph_endpoint>
 ORDERBOOK_URL=https://api.cow.fi/mainnet
 WEB3_URL=<eth_node_rpc_url>
+
 ```
 
 Replace the placeholder values with the actual values for your MongoDB instance and Subgraph endpoint.
@@ -100,6 +102,7 @@ MONGODB_COLLECTION_NAME=last_batches
 SUBGRAPH_ENDPOINT=https://api.thegraph.com/subgraphs/name/cowprotocol/cow
 ORDERBOOK_URL=https://api.cow.fi/mainnet
 WEB3_URL=https://eth.llamarpc.com
+START_TIMESTAMP=UNIX_TIMESTAMP
 ```
 
 ## Contributing
